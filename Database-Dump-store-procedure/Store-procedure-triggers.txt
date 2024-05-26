@@ -1,0 +1,87 @@
+Store Procedure for filter data
+DELIMITER //
+
+CREATE PROCEDURE GetProductsBYCriteria(
+    IN pageSize INT, 
+    IN pageNumber INT, 
+    IN isExpired BOOLEAN
+)
+BEGIN
+    DECLARE offsetValue INT;
+
+    SET offsetValue = pageNumber * pageSize;
+
+    IF isExpired THEN
+        SELECT * 
+        FROM product 
+        WHERE JSON_UNQUOTE(JSON_EXTRACT(definition, '$.expiry_date')) < UNIX_TIMESTAMP(NOW() + INTERVAL 1 MONTH) * 1000
+        LIMIT pageSize OFFSET offsetValue;
+    ELSE
+        SELECT * 
+        FROM product 
+        WHERE JSON_UNQUOTE(JSON_EXTRACT(definition, '$.expiry_date')) >= UNIX_TIMESTAMP(NOW() + INTERVAL 1 MONTH) * 1000
+        LIMIT pageSize OFFSET offsetValue;
+    END IF;
+END //
+
+DELIMITER 
+
+call GetProductsBYCriteria(2,0,false);
+
+DELIMITER //
+
+CREATE PROCEDURE GetProductCountBYCriteria( 
+    IN isExpired BOOLEAN
+)
+BEGIN
+    DECLARE offsetValue INT;
+
+    IF isExpired THEN
+        SELECT COUNT(*)
+        FROM product 
+        WHERE JSON_UNQUOTE(JSON_EXTRACT(definition, '$.expiry_date')) < UNIX_TIMESTAMP(NOW() + INTERVAL 1 MONTH) * 1000;
+    ELSE
+        SELECT COUNT(*) 
+        FROM product 
+        WHERE JSON_UNQUOTE(JSON_EXTRACT(definition, '$.expiry_date')) >= UNIX_TIMESTAMP(NOW() + INTERVAL 1 MONTH) * 1000;
+    END IF;
+END //
+
+DELIMITER 
+
+
+call GetProductCountBYCriteria(false);
+
+Trigger for UUID while Inserting Values
+
+DELIMITER //
+CREATE TRIGGER UUID_PRODUCT
+
+BEFORE INSERT ON PRODUCT
+FOR EACH ROW
+BEGIN
+    IF NEW.id IS NULL THEN
+        SET NEW.id = LEFT(UUID(), 15);
+    END IF;
+END;
+
+//
+
+DELIMITER ;
+
+
+Trigger for validating Json
+
+DELIMITER //
+CREATE TRIGGER validate_json_insert 
+BEFORE INSERT ON product
+FOR EACH ROW
+BEGIN
+    DECLARE is_valid_json BOOLEAN;
+    SET is_valid_json = JSON_VALID(NEW.definition);
+    IF is_valid_json = 0 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Invalid JSON format';
+    END IF;
+END //
+DELIMITER ;
